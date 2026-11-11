@@ -1,0 +1,52 @@
+workflows:
+  ios-unsigned:
+    name: NroChill unsigned IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+          source: true
+      cancel_previous_builds: true
+    scripts:
+      - name: Fetch Unity native libraries
+        script: |
+          set -euo pipefail
+          git lfs install
+          git lfs pull
+          git lfs fsck
+      - name: Build unsigned iOS archive
+        script: |
+          set -euo pipefail
+          mkdir -p build
+          xcodebuild archive \
+            -project Unity-iPhone.xcodeproj \
+            -scheme Unity-iPhone \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$CM_BUILD_DIR/build/NroChill.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ENABLE_BITCODE=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            2>&1 | tee "$CM_BUILD_DIR/build/xcodebuild.log"
+      - name: Package unsigned IPA
+        script: |
+          set -euo pipefail
+          APP_PATH="$CM_BUILD_DIR/build/NroChill.xcarchive/Products/Applications/NroChill.app"
+          test -d "$APP_PATH"
+          mkdir -p "$CM_BUILD_DIR/build/ipa/Payload"
+          ditto "$APP_PATH" "$CM_BUILD_DIR/build/ipa/Payload/NroChill.app"
+          cd "$CM_BUILD_DIR/build/ipa"
+          /usr/bin/zip -qry "$CM_BUILD_DIR/build/NroChill-unsigned.ipa" Payload
+          unzip -t "$CM_BUILD_DIR/build/NroChill-unsigned.ipa"
+    artifacts:
+      - build/NroChill-unsigned.ipa
+      - build/xcodebuild.log
+      - build/NroChill.xcarchive/dSYMs/*.dSYM
